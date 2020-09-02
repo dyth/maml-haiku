@@ -48,7 +48,7 @@ net_apply, net_params = create_model(rng)
 opt_init, opt_update, get_params = optimizers.adam(step_size=1e-3)
 opt_state = opt_init(net_params)
 
-# train with Adam
+# meta-train
 np_maml_loss = []
 for i in range(meta_training_epochs):
     # randomly sample task data
@@ -60,30 +60,31 @@ for i in range(meta_training_epochs):
     # generate query set data of size 1
     x2 = onp.random.uniform(low=-5., high=5.)
     y2 = A * onp.sin(x2 + phase)
-    # train
+    # update params
     opt_state, l = step(i, opt_state, x1, y1, x2, y2)
     np_maml_loss.append(l)
     if i % 1000 == 0:
         print(i)
 
-# generate pre-meta-testing data to see what weights look like
-net_params = get_params(opt_state)
+# training data
 xrange_inputs = np.linspace(-5, 5, 100).reshape((100, 1))
-targets = np.sin(xrange_inputs)
-preds_before_meta_testing = vmap(partial(net_apply, net_params))(xrange_inputs)
-
-# meta-testing time
+targets = 1. * onp.sin(xrange_inputs + 0.)
+# testing data
 x1 = onp.random.uniform(low=-5., high=5., size=(testing_size, 1))
 y1 = 1. * onp.sin(x1 + 0.)
-preds = []
+
+# meta-testing
+net_params = get_params(opt_state)
+preds = [vmap(partial(net_apply, net_params))(xrange_inputs)] # zero-shot generalisation
 for i in range(1, 5):
+    # training
     net_params = inner_update(net_params, x1, y1)
+    # testing
     preds.append(vmap(partial(net_apply, net_params))(xrange_inputs))
 
 # plot
-plt.plot(xrange_inputs, preds_before_meta_testing, label='pre-meta-testing')
 plt.plot(xrange_inputs, targets, label='target')
-for i, preds in enumerate(preds):
-    plt.plot(xrange_inputs, preds, label='{}-shot'.format(i))
+for i, p in enumerate(preds):
+    plt.plot(xrange_inputs, p, label=f'{i}-shot')
 plt.legend()
 plt.show()

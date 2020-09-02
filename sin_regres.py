@@ -47,7 +47,7 @@ preds_after = vmap(partial(net_apply, net_params))(xrange_inputs)
 
 # plot all the data
 plt.plot(xrange_inputs, targets, label='target')
-plt.plot(xrange_inputs, preds_before, label='prediction_before')
-plt.plot(xrange_inputs, preds_after, label='prediction_after')
+plt.plot(xrange_inputs, preds_before, label='before')
+plt.plot(xrange_inputs, preds_after, label='after')
 plt.legend()
 plt.show()
