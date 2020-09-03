@@ -9,16 +9,38 @@ from matplotlib import pyplot as plt
 from jax import numpy as np
 from jax import vmap, jit, random, grad
 from jax.experimental import optimizers
-from jax.tree_util import tree_multimap  # Element-wise manipulation of collections of numpy arrays
+# Element-wise manipulation of collections of numpy arrays
+from jax.tree_util import tree_multimap
+
 
 from model import create_model
 
 rng = random.PRNGKey(0)
 alpha = .1
 support_size = 20
-testing_size = 20
+query_size = 1
 meta_training_epochs = 20000
+tasks_per_batch = 4
 
+
+def sample_tasks(tasks_per_batch, support_size, query_size):
+    # Select amplitude and phase for the task
+    As = []
+    phases = []
+    for _ in range(tasks_per_batch):
+        As.append(onp.random.uniform(low=0.1, high=.5))
+        phases.append(onp.random.uniform(low=0., high=np.pi))
+    def get_batch(size):
+        xs, ys = [], []
+        for A, phase in zip(As, phases):
+            x = onp.random.uniform(low=-5., high=5., size=(size, 1))
+            y = A * onp.sin(x + phase)
+            xs.append(x)
+            ys.append(y)
+        return np.stack(xs), np.stack(ys)
+    x1, y1 = get_batch(support_size)
+    x2, y2 = get_batch(query_size)
+    return x1, y1, x2, y2
 
 def loss(params, inputs, targets):
     'compute average loss for the batch'
@@ -34,35 +56,28 @@ def maml_loss(p, x1, y1, x2, y2):
     p2 = inner_update(p, x1, y1)
     return loss(p2, x2, y2)
 
+def batch_maml_loss(p, x1_b, y1_b, x2_b, y2_b):
+    'vmapped version of maml loss, return scalar for all tasks'
+    task_losses = vmap(partial(maml_loss, p))(x1_b, y1_b, x2_b, y2_b)
+    return np.mean(task_losses)
+
 @jit
 def step(i, opt_state, x1, y1, x2, y2):
     p = get_params(opt_state)
-    g = grad(maml_loss)(p, x1, y1, x2, y2)
-    l = maml_loss(p, x1, y1, x2, y2)
+    g = grad(batch_maml_loss)(p, x1, y1, x2, y2)
+    l = batch_maml_loss(p, x1, y1, x2, y2)
     return opt_update(i, g, opt_state), l
 
 
 # initialise model and optimiser
-# this LR seems to be better than 1e-2 and 1e-4
 net_apply, net_params = create_model(rng)
 opt_init, opt_update, get_params = optimizers.adam(step_size=1e-3)
 opt_state = opt_init(net_params)
 
 # meta-train
-np_maml_loss = []
 for i in range(meta_training_epochs):
-    # randomly sample task data
-    A = onp.random.uniform(low=0.1, high=.5)
-    phase = onp.random.uniform(low=0., high=np.pi)
-    # generate support set data of size support_size
-    x1 = onp.random.uniform(low=-5., high=5., size=(support_size, 1))
-    y1 = A * onp.sin(x1 + phase)
-    # generate query set data of size 1
-    x2 = onp.random.uniform(low=-5., high=5.)
-    y2 = A * onp.sin(x2 + phase)
-    # update params
+    x1, y1, x2, y2 = sample_tasks(tasks_per_batch, support_size, query_size)
     opt_state, l = step(i, opt_state, x1, y1, x2, y2)
-    np_maml_loss.append(l)
     if i % 1000 == 0:
         print(i)
 
@@ -70,17 +85,15 @@ for i in range(meta_training_epochs):
 xrange_inputs = np.linspace(-5, 5, 100).reshape((100, 1))
 targets = 1. * onp.sin(xrange_inputs + 0.)
 # testing data
-x1 = onp.random.uniform(low=-5., high=5., size=(testing_size, 1))
+x1 = onp.random.uniform(low=-5., high=5., size=(support_size, 1))
 y1 = 1. * onp.sin(x1 + 0.)
 
 # meta-testing
 net_params = get_params(opt_state)
 preds = [vmap(partial(net_apply, net_params))(xrange_inputs)] # zero-shot generalisation
 for i in range(1, 5):
-    # training
-    net_params = inner_update(net_params, x1, y1)
-    # testing
-    preds.append(vmap(partial(net_apply, net_params))(xrange_inputs))
+    net_params = inner_update(net_params, x1, y1) # training
+    preds.append(vmap(partial(net_apply, net_params))(xrange_inputs)) # testing
 
 # plot
 plt.plot(xrange_inputs, targets, label='target')
