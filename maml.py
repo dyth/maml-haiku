@@ -12,40 +12,23 @@ from jax.experimental import optimizers
 # Element-wise manipulation of collections of numpy arrays
 from jax.tree_util import tree_multimap
 
-
 from model import create_model
+from sin_data import meta_train_data, meta_test_data
+
 
 rng = random.PRNGKey(0)
 alpha = .1
 support_size = 20
-query_size = 1
+query_size = 20
 meta_training_epochs = 20000
 tasks_per_batch = 4
+evaluate_shots = 10
 
 
-def sample_tasks(tasks_per_batch, support_size, query_size):
-    # Select amplitude and phase for the task
-    As = []
-    phases = []
-    for _ in range(tasks_per_batch):
-        As.append(onp.random.uniform(low=0.1, high=.5))
-        phases.append(onp.random.uniform(low=0., high=np.pi))
-    def get_batch(size):
-        xs, ys = [], []
-        for A, phase in zip(As, phases):
-            x = onp.random.uniform(low=-5., high=5., size=(size, 1))
-            y = A * onp.sin(x + phase)
-            xs.append(x)
-            ys.append(y)
-        return np.stack(xs), np.stack(ys)
-    x1, y1 = get_batch(support_size)
-    x2, y2 = get_batch(query_size)
-    return x1, y1, x2, y2
-
-def loss(params, inputs, targets):
+def loss(params, inputs, y2):
     'compute average loss for the batch'
     predictions = net_apply(params, inputs)
-    return np.mean((targets - predictions)**2)
+    return np.mean((y2 - predictions)**2)
 
 def inner_update(p, x1, y1):
     grads = grad(loss)(p, x1, y1)
@@ -76,28 +59,22 @@ opt_state = opt_init(net_params)
 
 # meta-train
 for i in range(meta_training_epochs):
-    x1, y1, x2, y2 = sample_tasks(tasks_per_batch, support_size, query_size)
+    x1, y1, x2, y2 = meta_train_data(tasks_per_batch, support_size, query_size)
     opt_state, l = step(i, opt_state, x1, y1, x2, y2)
     if i % 1000 == 0:
         print(i)
 
-# training data
-xrange_inputs = np.linspace(-5, 5, 100).reshape((100, 1))
-targets = 1. * onp.sin(xrange_inputs + 0.)
-# testing data
-x1 = onp.random.uniform(low=-5., high=5., size=(support_size, 1))
-y1 = 1. * onp.sin(x1 + 0.)
-
-# meta-testing
+# meta-test
+x1, y1, x2, y2, = meta_test_data(support_size)
 net_params = get_params(opt_state)
-preds = [vmap(partial(net_apply, net_params))(xrange_inputs)] # zero-shot generalisation
-for i in range(1, 5):
-    net_params = inner_update(net_params, x1, y1) # training
-    preds.append(vmap(partial(net_apply, net_params))(xrange_inputs)) # testing
+preds = [vmap(partial(net_apply, net_params))(x2)] # zero-shot generalisation
+for i in range(evaluate_shots):
+    net_params = inner_update(net_params, x1, y1) # train
+    preds.append(vmap(partial(net_apply, net_params))(x2)) # test
 
 # plot
-plt.plot(xrange_inputs, targets, label='target')
+plt.plot(x2, y2, label='target')
 for i, p in enumerate(preds):
-    plt.plot(xrange_inputs, p, label=f'{i}-shot')
+    plt.plot(x2, p, label=f'{i}-shot')
 plt.legend()
 plt.show()
