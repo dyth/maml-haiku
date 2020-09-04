@@ -2,9 +2,9 @@
 With thanks to Eric Jang from
 https://jax.readthedocs.io/en/stable/notebooks/maml.html
 """
-import numpy as onp
 from functools import partial # for use with vmap
 from matplotlib import pyplot as plt
+from tqdm.autonotebook import tqdm
 
 from jax import numpy as np
 from jax import vmap, jit, random, grad
@@ -13,16 +13,24 @@ from jax.experimental import optimizers
 from jax.tree_util import tree_multimap
 
 from model import create_model
-from sin_data import meta_train_data, meta_test_data
+from sin_data import meta_train_data, training_data, testing_data
 
 
+# hyperparameters from https://github.com/cbfinn/maml/blob/master/main.py
 rng = random.PRNGKey(0)
-alpha = .1
-support_size = 20
-query_size = 20
-meta_training_epochs = 20000
-tasks_per_batch = 4
-evaluate_shots = 10
+metatrain_iterations = 7000
+meta_lr = 0.001
+update_lr = 0.01
+support_size = 10
+query_size = 10
+meta_batch_size = 25
+evaluate_shots = [5, 5, 10]
+
+
+# initialise model and optimiser
+net_apply, net_params = create_model(rng)
+opt_init, opt_update, get_params = optimizers.adam(step_size=meta_lr)
+opt_state = opt_init(net_params)
 
 
 def loss(params, inputs, y2):
@@ -32,7 +40,7 @@ def loss(params, inputs, y2):
 
 def inner_update(p, x1, y1):
     grads = grad(loss)(p, x1, y1)
-    inner_sgd_fn = lambda g, state: (state - alpha*g)
+    inner_sgd_fn = lambda g, state: (state - update_lr*g)
     return tree_multimap(inner_sgd_fn, grads, p)
 
 def maml_loss(p, x1, y1, x2, y2):
@@ -52,29 +60,37 @@ def step(i, opt_state, x1, y1, x2, y2):
     return opt_update(i, g, opt_state), l
 
 
-# initialise model and optimiser
-net_apply, net_params = create_model(rng)
-opt_init, opt_update, get_params = optimizers.adam(step_size=1e-3)
-opt_state = opt_init(net_params)
-
 # meta-train
-for i in range(meta_training_epochs):
-    x1, y1, x2, y2 = meta_train_data(tasks_per_batch, support_size, query_size)
-    opt_state, l = step(i, opt_state, x1, y1, x2, y2)
-    if i % 1000 == 0:
-        print(i)
+with tqdm(range(metatrain_iterations), total=metatrain_iterations) as pbar:
+    for i in pbar:
+        x1, y1, x2, y2 = meta_train_data(meta_batch_size, support_size, query_size)
+        opt_state, l = step(i, opt_state, x1, y1, x2, y2)
+        pbar.set_description(f'loss: {l:.5f}')
 
 # meta-test
-x1, y1, x2, y2, = meta_test_data(support_size)
+x2, y2 = testing_data()
 net_params = get_params(opt_state)
 preds = [vmap(partial(net_apply, net_params))(x2)] # zero-shot generalisation
-for i in range(evaluate_shots):
+pointsx, pointsy = [], []
+for es in evaluate_shots:
+    x1, y1 = training_data(es)
+    pointsx.append(x1)
+    pointsy.append(y1)
     net_params = inner_update(net_params, x1, y1) # train
     preds.append(vmap(partial(net_apply, net_params))(x2)) # test
 
 # plot
 plt.plot(x2, y2, label='target')
 for i, p in enumerate(preds):
-    plt.plot(x2, p, label=f'{i}-shot')
+    plt.plot(x2, p, label=f'{sum(evaluate_shots[:i])}-shots')
+plt.gca().set_prop_cycle(color=['green', 'red', 'purple'])
+for px, py in zip(pointsx, pointsy):
+    plt.scatter(px, py)
 plt.legend()
 plt.show()
+
+
+# plt.plot(onp.convolve(np_maml_loss, [.05]*20), label='task_batch=1')
+# plt.plot(onp.convolve(np_batched_maml_loss, [.05]*20), label='task_batch=4')
+# plt.ylim(0., 1e-1)
+# plt.legend()
