@@ -18,11 +18,11 @@ from sin_data import meta_train_data, training_data, testing_data
 
 # hyperparameters from https://github.com/cbfinn/maml/blob/master/main.py
 rng = random.PRNGKey(0)
-metatrain_iterations = 7000
+metatrain_iterations = 70000
 meta_lr = 0.001
 update_lr = 0.01
-support_size = 10
-query_size = 10
+support_size = 5
+query_size = 5
 meta_batch_size = 25
 evaluate_shots = [5, 5, 10]
 
@@ -82,7 +82,7 @@ for es in evaluate_shots:
 # plot
 plt.plot(x2, y2, label='target')
 for i, p in enumerate(preds):
-    plt.plot(x2, p, label=f'{sum(evaluate_shots[:i])}-shots')
+    plt.plot(x2, p, label=f'{sum(evaluate_shots[:i])}-shot')
 plt.gca().set_prop_cycle(color=['green', 'red', 'purple'])
 for px, py in zip(pointsx, pointsy):
     plt.scatter(px, py)

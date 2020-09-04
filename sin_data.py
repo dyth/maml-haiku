@@ -9,7 +9,7 @@ def meta_train_data(tasks_per_batch, support_size, query_size):
     phases = []
     for _ in range(tasks_per_batch):
         As.append(onp.random.uniform(low=0.1, high=5.))
-        phases.append(onp.random.uniform(low=0., high=np.pi))
+        phases.append(onp.random.uniform(low=0, high=np.pi))
     def get_batch(size):
         'for each task randomly sample input space and create according output'
         xs, ys = [], []
@@ -26,10 +26,10 @@ def meta_train_data(tasks_per_batch, support_size, query_size):
 
 def training_data(size):
     x1 = onp.random.uniform(low=-5., high=5., size=(size, 1))
-    y1 = 1. * onp.sin(x1 + 0.)
+    y1 = 1. * onp.sin(x1 + np.pi/4)
     return x1, y1
 
 def testing_data():
     x2 = np.linspace(-5, 5, 100).reshape((100, 1))
-    y2 = 1. * onp.sin(x2 + 0.)
+    y2 = 1. * onp.sin(x2 + np.pi/4)
     return x2, y2
