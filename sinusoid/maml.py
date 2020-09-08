@@ -11,12 +11,14 @@ from jax import vmap, jit, random, grad
 from jax.experimental import optimizers
 # Element-wise manipulation of collections of numpy arrays
 from jax.tree_util import tree_multimap
+from jax.lib import xla_bridge
 
 from model import create_model
 from sin_data import meta_train_data, training_data, testing_data
 
 
 # hyperparameters from https://github.com/cbfinn/maml/blob/master/main.py
+print(xla_bridge.get_backend().platform)
 rng = random.PRNGKey(0)
 metatrain_iterations = 70000
 meta_lr = 0.001

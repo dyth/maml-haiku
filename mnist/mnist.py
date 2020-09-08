@@ -57,9 +57,9 @@ def train_step(optimizer, batch):
         logits = model(batch[0])
         loss = np.mean(cross_entropy_loss(logits, batch[1]))
         return loss
-    grad = jax.grad(loss_fn)(optimizer.target)
+    loss, grad = jax.value_and_grad(loss_fn)(optimizer.target)
     optimizer = optimizer.apply_gradient(grad)
-    return optimizer, eval(optimizer.target, batch)
+    return optimizer, loss
 
 
 t = transforms.Compose([
@@ -84,8 +84,8 @@ for epoch in range(epochs):
     # training
     with tqdm(train_ds, total=len(train_ds)) as pbar:
         for batch in pbar:
-            optimizer, metrics = train_step(optimizer, batch)
-            pbar.set_description(f"loss: {metrics['loss']:.4f}, accuracy: {100*metrics['accuracy']:.2f}")
+            optimizer, loss = train_step(optimizer, batch)
+            pbar.set_description(f"loss: {loss:.4f}")
 
     # testing
     with tqdm(test_ds, total=len(test_ds)) as pbar:
