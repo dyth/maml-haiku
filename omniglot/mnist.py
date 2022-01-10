@@ -23,6 +23,7 @@ epochs = 10
 
 class CNN(flax.nn.Module):
     def apply(self, x):
+        print(x.shape)
         x = flax.nn.Conv(x, features=32, kernel_size=(3, 3))
         x = np.maximum(x, 0)
         x = flax.nn.avg_pool(x, window_shape=(2, 2), strides=(2, 2))
@@ -39,7 +40,7 @@ class CNN(flax.nn.Module):
 
 @jax.vmap
 def cross_entropy_loss(logits, label):
-    return -logits[label]
+    return -logits[label.astype(np.int32)]
 
 def compute_metrics(logits, labels):
     loss = np.mean(cross_entropy_loss(logits, labels))
@@ -57,9 +58,9 @@ def train_step(optimizer, batch):
         logits = model(batch[0])
         loss = np.mean(cross_entropy_loss(logits, batch[1]))
         return loss
-    loss, grad = jax.value_and_grad(loss_fn)(optimizer.target)
+    grad = jax.grad(loss_fn)(optimizer.target)
     optimizer = optimizer.apply_gradient(grad)
-    return optimizer, loss
+    return optimizer, eval(optimizer.target, batch)
 
 
 t = transforms.Compose([
@@ -84,8 +85,8 @@ for epoch in range(epochs):
     # training
     with tqdm(train_ds, total=len(train_ds)) as pbar:
         for batch in pbar:
-            optimizer, loss = train_step(optimizer, batch)
-            pbar.set_description(f"loss: {loss:.4f}")
+            optimizer, metrics = train_step(optimizer, batch)
+            pbar.set_description(f"loss: {metrics['loss']:.4f}, accuracy: {100*metrics['accuracy']:.2f}")
 
     # testing
     with tqdm(test_ds, total=len(test_ds)) as pbar:

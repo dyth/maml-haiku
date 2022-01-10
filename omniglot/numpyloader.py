@@ -3,16 +3,21 @@ From https://github.com/google/jax/blob/master/docs/notebooks/Neural_Network_and
 '''
 from torch.utils.data import DataLoader
 from jax import numpy as np
+from collections import OrderedDict
 
 
 def numpy_collate(batch):
     if isinstance(batch[0], np.ndarray):
         return np.stack(batch)
+    elif isinstance(batch[0], OrderedDict):
+        print(batch[0]['train'])
+        transposed = zip(*batch)
+        return [numpy_collate(samples) for samples in transposed]
     elif isinstance(batch[0], (tuple, list)):
         transposed = zip(*batch)
         return [numpy_collate(samples) for samples in transposed]
     else:
-        return np.array(batch)
+        return np.array(batch, dtype=np.float32)
 
 
 class NumpyLoader(DataLoader):
