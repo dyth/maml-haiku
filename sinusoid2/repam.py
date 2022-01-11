@@ -57,14 +57,56 @@ class Model(hk.Module):
 def model(x):
     return Model()(x)
 
+model               = hk.transform_with_state(model)
+outer_apply         = jax.jit(model.apply)
+init_seed, seed     = random.split(seed)
+random_input        = random.normal(init_seed, (1,))
+outer_params, state = model.init(init_seed, random_input)
+outer_opt           = optax.adam(args.outer_lr)
+outer_opt_state     = outer_opt.init(outer_params)
 
-model           = hk.transform_with_state(model)
+flat_op, op_unravel = ravel_pytree(outer_params)
+
+
+
+class Reparameterize(hk.Module):
+    def __call__(self, flat_params):
+        fp_shape = flat_params.shape
+        stdev    = np.sqrt(fp_shape[0])
+        init     = hk.initializers.TruncatedNormal(1. / stdev)
+        params_w = hk.get_parameter('w', shape=fp_shape, init=init)
+        params_b = hk.get_parameter('b', shape=fp_shape, init=init)
+        reparams = params_w * flat_params  +  params_b
+        reparams = op_unravel(reparams)
+        return reparams
+
+def reparameterize(x):
+    return Reparameterize()(x)
+
+reparameterize  = hk.transform(reparameterize)
+inner_apply     = jax.jit(reparameterize.apply)
 init_seed, seed = random.split(seed)
-params, state   = model.init(init_seed, random.normal(init_seed, (1,)))
-opt             = optax.adam(args.outer_lr)
-opt_state       = opt.init(params)
-apply           = jax.jit(model.apply)
-# apply           = model.apply
+random_input    = random.normal(init_seed, flat_op.shape)
+inner_params    = reparameterize.init(init_seed, random_input)
+inner_opt       = optax.adam(args.inner_lr)
+inner_opt_state = inner_opt.init(inner_params)
+
+
+print(jax.tree_map(lambda x: x.shape, outer_params))
+print(jax.tree_map(lambda x: x.shape, inner_apply(inner_params, None, flat_op)))
+print(c)
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

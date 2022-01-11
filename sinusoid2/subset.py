@@ -1,3 +1,6 @@
+'''
+from https://dm-haiku.readthedocs.io/en/latest/notebooks/non_trainable.html
+'''
 import haiku as hk
 import jax
 import jax.numpy as jnp
