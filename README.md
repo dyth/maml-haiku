@@ -1,4 +1,4 @@
-# maml-jax
+# maml-haiku
 
 This repository reproduces the sinusoid experiments from
 [MAML (https://arxiv.org/abs/1703.03400)](https://arxiv.org/abs/1703.03400)
