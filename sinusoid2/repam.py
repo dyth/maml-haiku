@@ -66,7 +66,7 @@ outer_params, op_unravel = ravel_pytree(outer_params)
 outer_opt                = optax.adam(args.outer_lr)
 outer_opt_state          = outer_opt.init(outer_params)
 
-# @jax.jit
+@jax.jit
 def outer_apply(outer_params, x):
     outer_params = op_unravel(outer_params)
     y       = model.apply(outer_params, None, x)
@@ -90,8 +90,8 @@ def reparameterize(x):
     return Reparameterize()(x)
 
 reparameterize  = hk.transform(reparameterize)
-# inner_apply     = jax.jit(reparameterize.apply)
-inner_apply     = reparameterize.apply
+inner_apply     = jax.jit(reparameterize.apply)
+# inner_apply     = reparameterize.apply
 init_seed, seed = random.split(seed)
 random_input    = random.normal(init_seed, outer_params.shape)
 inner_params    = reparameterize.init(init_seed, random_input)
@@ -101,15 +101,10 @@ inner_opt       = optax.adam(args.inner_lr)
 inner_opt_state = inner_opt.init(inner_params)
 
 
-#####################################################################3
 
 def inner_loss(inner_params, outer_params, x, y):
-    # print('inner', jax.tree_map(lambda x: x.shape, inner_params))
-    # print('outer', jax.tree_map(lambda x: x.shape, outer_params))
     reparams = inner_apply(inner_params, None, outer_params)
-    # print('reparams', jax.tree_map(lambda x: x.shape, reparams))
     preds    = outer_apply(reparams, x)
-    # print('preds', jax.tree_map(lambda x: x.shape, preds))
     mse      = np.mean((y - preds)**2)
     return mse
 
@@ -118,24 +113,20 @@ def inner_update(inner_params, inner_opt_state, outer_params, batch):
     # grads, inner_opt_state = inner_opt.update(grads, inner_opt_state)
     # inner_params           = optax.apply_updates(inner_params, grads)
     # return inner_params
-    loss, grads  = jax.value_and_grad(inner_loss)(inner_params, outer_params, *batch)
-    inner_sgd    = lambda p, g: (p - args.inner_lr*g)
-    inner_params = jax.tree_util.tree_multimap(inner_sgd, params, grads)
+    for i in range(1):
+        loss, grads  = jax.value_and_grad(inner_loss)(inner_params, outer_params, *batch)
+        inner_sgd    = lambda p, g: (p - args.inner_lr*g)
+        inner_params = jax.tree_util.tree_multimap(inner_sgd, inner_params, grads)
     return inner_params
 
-def outer_loss(outer_params, inner_params, inner_opt_state, support, query):
-    # inner_params = inner_update(inner_params, inner_opt_state, outer_params, support)
-    query_loss   = inner_loss(inner_params, outer_params, *query)
-    return query_loss
-
-def batch_outer_loss(outer_params, inner_params, inner_opt_state, support, query):
-    task_loss = vmap(partial(outer_loss, outer_params, inner_params, inner_opt_state))(support, query)
-    # print('task_loss', task_loss.shape)
+def batch_outer_loss(outer_params, inner_params, query):
+    task_loss = vmap(lambda ip, q1, q2: inner_loss(ip, outer_params, q1, q2))(inner_params, *query)
     return task_loss.mean()
 
-# @jax.jit
+@jax.jit
 def outer_update(outer_params, outer_opt_state, inner_params, inner_opt_state, support, query):
-    loss, grads            = jax.value_and_grad(batch_outer_loss)(outer_params, inner_params, inner_opt_state, support, query)
+    inner_params           = vmap(partial(inner_update, inner_params, inner_opt_state, outer_params))(support)
+    loss, grads            = jax.value_and_grad(batch_outer_loss)(outer_params, inner_params, query)
     grads, outer_opt_state = outer_opt.update(grads, outer_opt_state)
     outer_params           = optax.apply_updates(outer_params, grads)
     return loss, outer_params, outer_opt_state
@@ -143,11 +134,8 @@ def outer_update(outer_params, outer_opt_state, inner_params, inner_opt_state, s
 
 for _ in range(args.outer_steps):
     data = meta_train_data(args.outer_batch, args.support_batch, args.query_batch)
-    # print(outer_params)
     loss, outer_params, outer_opt_state = outer_update(outer_params, outer_opt_state, inner_params, inner_opt_state, *data)
     print(loss)
-    print(outer_params)
-    print(c)
 
 
 # meta-test
@@ -164,8 +152,6 @@ for es in args.eval_shots:
     # test
     reparams = inner_apply(inner_params, None, outer_params)
     preds.append(outer_apply(reparams, x_test))
-    # params = inner_update(params, x, y) # train
-    # preds.append(apply(params, None, x_test)[0]) # test
 
 
 # plot

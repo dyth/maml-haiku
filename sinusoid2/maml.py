@@ -1,24 +1,19 @@
 '''
 Adapted from https://jax.readthedocs.io/en/stable/notebooks/maml.html
 '''
-import argparse, time, pickle
-import random as orandom
-import numpy as onp
+import os
+os.environ['XLA_PYTHON_CLIENT_PREALLOCATE'] = 'false'
+import argparse
 import haiku as hk
 import jax
 import optax
-import subprocess
 
 from functools import partial
 from distutils.util import strtobool
 from jax import numpy as np
-from jax import nn, random, ops
+from jax import nn, random
 from jax.lib import xla_bridge
-from jax.flatten_util import ravel_pytree
-from jax.tree_util import tree_flatten
-from haiku import data_structures as ds
 from jax import vmap
-from tensorboardX import SummaryWriter
 from matplotlib import pyplot as plt
 
 from sin_data import meta_train_data, training_data, testing_data
@@ -36,7 +31,6 @@ parser.add_argument('--outer-batch',   type=int,            default=25)
 parser.add_argument('--support-batch', type=int,            default=5)
 parser.add_argument('--query-batch',   type=int,            default=5)
 parser.add_argument('--eval-shots',    type=int, nargs='+', default=[5, 5, 10])
-# parser.add_argument('--something',     type=strtobool, default=True)
 args = parser.parse_args()
 
 
@@ -76,7 +70,7 @@ def mse_loss(params, state, x, y):
 def inner_update(params, state, x, y):
     grads, state = jax.grad(mse_loss, has_aux=True)(params, state, x, y)
     inner_sgd    = lambda p, g: (p - args.inner_lr*g)
-    new_params   = jax.tree_util.tree_multimap(inner_sgd, params, grads)
+    new_params   = jax.tree_util.tree_map(inner_sgd, params, grads)
     return new_params, state
 
 def outer_loss(params, state, support, query):
